@@ -12,10 +12,12 @@ from tensorboardX import SummaryWriter
 
 from pcdet.config import cfg, cfg_from_list, cfg_from_yaml_file, log_config_to_file
 from pcdet.datasets import build_dataloader
-from pcdet.models import build_network, model_fn_decorator
+from pcdet.models import build_network, model_fn_decorator, build_teacher_network
 from pcdet.utils import common_utils
 from train_utils.optimization import build_optimizer, build_scheduler
 from train_utils.train_utils import train_model
+from pcdet.utils.kd_utils import kd_utils
+from train_utils.train_kd_utils import train_model_kd
 
 
 def parse_config():
@@ -34,7 +36,7 @@ def parse_config():
     parser.add_argument('--fix_random_seed', action='store_true', default=False, help='')
     parser.add_argument('--ckpt_save_interval', type=int, default=1, help='number of training epochs')
     parser.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
-    parser.add_argument('--max_ckpt_save_num', type=int, default=30, help='max number of saved checkpoint')
+    parser.add_argument('--max_ckpt_save_num', type=int, default=40, help='max number of saved checkpoint')
     parser.add_argument('--merge_all_iters_to_one_epoch', action='store_true', default=False, help='')
     parser.add_argument('--set', dest='set_cfgs', default=None, nargs=argparse.REMAINDER,
                         help='set extra config keys if needed')
@@ -61,6 +63,15 @@ def parse_config():
 
     if args.set_cfgs is not None:
         cfg_from_list(args.set_cfgs, cfg)
+    
+    if cfg.get('KD', None) and cfg.KD.ENABLED:
+        kd_utils.process_kd_config()
+
+    if cfg.get('TEACHER_CKPT', None):
+        args.teacher_ckpt = cfg.TEACHER_CKPT
+
+    if cfg.get('PRETRAINED_MODEL', None):
+        args.pretrained_model = cfg.PRETRAINED_MODEL
 
     return args, cfg
 
@@ -87,7 +98,7 @@ def main():
     if args.fix_random_seed:
         common_utils.set_random_seed(666 + cfg.LOCAL_RANK)
 
-    output_dir = cfg.ROOT_DIR / 'output' / cfg.EXP_GROUP_PATH / cfg.TAG / args.extra_tag
+    output_dir = cfg.ROOT_DIR / 'output' / cfg.TAG / args.extra_tag
     ckpt_dir = output_dir / 'ckpt'
     output_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -127,6 +138,14 @@ def main():
     )
 
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
+
+    if cfg.get('KD', None) and cfg.KD.ENABLED:
+        assert args.teacher_ckpt is not None
+        teacher_model = build_teacher_network(cfg, args, train_set, dist_train, logger)
+        kd_utils.prepare_kd_modules(teacher_model, model)
+    else:
+        teacher_model = None
+
     if args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model.cuda()
@@ -171,32 +190,54 @@ def main():
     # -----------------------start training---------------------------
     logger.info('**********************Start training %s/%s(%s)**********************'
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
-
-    train_model(
-        model,
-        optimizer,
-        train_loader,
-        model_func=model_fn_decorator(),
-        lr_scheduler=lr_scheduler,
-        optim_cfg=cfg.OPTIMIZATION,
-        start_epoch=start_epoch,
-        total_epochs=args.epochs,
-        start_iter=it,
-        rank=cfg.LOCAL_RANK,
-        tb_log=tb_log,
-        ckpt_save_dir=ckpt_dir,
-        train_sampler=train_sampler,
-        lr_warmup_scheduler=lr_warmup_scheduler,
-        ckpt_save_interval=args.ckpt_save_interval,
-        max_ckpt_save_num=args.max_ckpt_save_num,
-        merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch, 
-        logger=logger, 
-        logger_iter_interval=args.logger_iter_interval,
-        ckpt_save_time_interval=args.ckpt_save_time_interval,
-        use_logger_to_record=not args.use_tqdm_to_record, 
-        show_gpu_stat=not args.wo_gpu_stat,
-        use_amp=args.use_amp
-    )
+    
+    if cfg.get('KD', None) and cfg.KD.ENABLED:
+        train_model_kd(
+            model,
+            optimizer,
+            train_loader,
+            model_func=model_fn_decorator(),
+            lr_scheduler=lr_scheduler,
+            optim_cfg=cfg.OPTIMIZATION,
+            start_epoch=start_epoch,
+            total_epochs=args.epochs,
+            start_iter=it,
+            rank=cfg.LOCAL_RANK,
+            tb_log=tb_log,
+            ckpt_save_dir=ckpt_dir,
+            train_sampler=train_sampler,
+            lr_warmup_scheduler=lr_warmup_scheduler,
+            ckpt_save_interval=args.ckpt_save_interval,
+            max_ckpt_save_num=args.max_ckpt_save_num,
+            merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
+            teacher_model=teacher_model
+        )
+    else:
+        train_model(
+            model,
+            optimizer,
+            train_loader,
+            model_func=model_fn_decorator(),
+            lr_scheduler=lr_scheduler,
+            optim_cfg=cfg.OPTIMIZATION,
+            start_epoch=start_epoch,
+            total_epochs=args.epochs,
+            start_iter=it,
+            rank=cfg.LOCAL_RANK,
+            tb_log=tb_log,
+            ckpt_save_dir=ckpt_dir,
+            train_sampler=train_sampler,
+            lr_warmup_scheduler=lr_warmup_scheduler,
+            ckpt_save_interval=args.ckpt_save_interval,
+            max_ckpt_save_num=args.max_ckpt_save_num,
+            merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch, 
+            logger=logger, 
+            logger_iter_interval=args.logger_iter_interval,
+            ckpt_save_time_interval=args.ckpt_save_time_interval,
+            use_logger_to_record=not args.use_tqdm_to_record, 
+            show_gpu_stat=not args.wo_gpu_stat,
+            use_amp=args.use_amp
+        )
 
     if hasattr(train_set, 'use_shared_memory') and train_set.use_shared_memory:
         train_set.clean_shared_memory()

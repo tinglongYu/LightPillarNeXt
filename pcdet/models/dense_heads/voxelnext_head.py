@@ -102,6 +102,13 @@ class VoxelNeXtHead(nn.Module):
             )
         self.predict_boxes_when_training = predict_boxes_when_training
         self.forward_ret_dict = {}
+
+        # for kd only
+        self.is_teacher = False
+        self.kd_head = None
+        self.disable = self.model_cfg.get('DISABLE', None)
+        self.disable_inference = self.model_cfg.get('DISABLE_INFERENCE', None)
+
         self.build_losses()
 
     def build_losses(self):
@@ -531,15 +538,28 @@ class VoxelNeXtHead(nn.Module):
             pred_dicts.append(head(x))
 
         if self.training:
+            target_boxes = data_dict['gt_boxes']
+
+            # kd operations
+            if self.kd_head is not None and not self.is_teacher and self.model_cfg.get('LABEL_ASSIGN_KD', None):
+                target_boxes, num_target_boxes_list = self.kd_head.parse_teacher_pred_to_targets(
+                    kd_cfg=self.model_cfg.LABEL_ASSIGN_KD, pred_boxes_tea=data_dict['decoded_pred_tea'],
+                    gt_boxes=target_boxes
+                )
+
             target_dict = self.assign_targets(
-                data_dict['gt_boxes'], num_voxels, spatial_indices, spatial_shape
+                target_boxes, num_voxels, spatial_indices, spatial_shape
             )
             self.forward_ret_dict['target_dicts'] = target_dict
 
         self.forward_ret_dict['pred_dicts'] = pred_dicts
         self.forward_ret_dict['voxel_indices'] = voxel_indices
 
-        if not self.training or self.predict_boxes_when_training:
+        # add needed predictions to dict
+        if self.kd_head is not None and self.is_teacher:
+            self.kd_head.put_pred_to_ret_dict(self, data_dict, pred_dicts)
+
+        if (not self.training and not self.is_teacher) or self.predict_boxes_when_training:
             if self.double_flip:
                 data_dict['batch_size'] = data_dict['batch_size'] // 4
             pred_dicts = self.generate_predicted_boxes(

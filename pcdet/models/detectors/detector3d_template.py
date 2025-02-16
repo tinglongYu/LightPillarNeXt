@@ -5,9 +5,9 @@ import torch.nn as nn
 import numpy as np
 from ...ops.iou3d_nms import iou3d_nms_utils
 from ...utils.spconv_utils import find_all_spconv_keys
-from .. import backbones_2d, backbones_3d, dense_heads, roi_heads
+from .. import backbones_2d, backbones_3d, dense_heads, roi_heads, kd_adapt_block
 from ..backbones_2d import map_to_bev
-from ..backbones_3d import pfe, vfe
+from ..backbones_3d import pfe, vfe, pillar_adaptor
 from ..model_utils import model_nms_utils
 
 
@@ -20,10 +20,16 @@ class Detector3DTemplate(nn.Module):
         self.class_names = dataset.class_names
         self.register_buffer('global_step', torch.LongTensor(1).zero_())
 
+        # self.module_topology = [
+        #     'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
+        #     'backbone_2d', 'dense_head',  'point_head', 'roi_head'
+        # ]
         self.module_topology = [
-            'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
-            'backbone_2d', 'dense_head',  'point_head', 'roi_head'
+            'vfe', 'backbone_3d', 'map_to_bev_module', 'pillar_adaptor', 'pfe',
+            'backbone_2d', 'dense_head', 'dense_head_aux', 'kd_adapt_block', 'point_head', 'roi_head'
         ]
+        # For kd only
+        self.is_teacher = False
 
     @property
     def mode(self):
@@ -37,9 +43,9 @@ class Detector3DTemplate(nn.Module):
             'module_list': [],
             'num_rawpoint_features': self.dataset.point_feature_encoder.num_point_features,
             'num_point_features': self.dataset.point_feature_encoder.num_point_features,
-            'grid_size': self.dataset.grid_size,
+            'grid_size': self.dataset.grid_size_tea if hasattr(self.dataset, 'grid_size_tea') and self.model_cfg.get('IS_TEACHER', None) else self.dataset.grid_size,
             'point_cloud_range': self.dataset.point_cloud_range,
-            'voxel_size': self.dataset.voxel_size,
+            'voxel_size': self.dataset.voxel_size_tea if hasattr(self.dataset, 'voxel_size_tea') and self.model_cfg.get('IS_TEACHER', None) else self.dataset.voxel_size,
             'depth_downsample_factor': self.dataset.depth_downsample_factor
         }
         for module_name in self.module_topology:
@@ -94,6 +100,18 @@ class Detector3DTemplate(nn.Module):
         model_info_dict['num_bev_features'] = map_to_bev_module.num_bev_features
         return map_to_bev_module, model_info_dict
 
+    def build_pillar_adaptor(self, model_info_dict):
+        if self.model_cfg.get('PILLAR_ADAPTOR', None) is None:
+            return None, model_info_dict
+
+        pillar_adapt_module = pillar_adaptor.__all__[self.model_cfg.PILLAR_ADAPTOR.NAME](
+            model_cfg=self.model_cfg.PILLAR_ADAPTOR,
+            in_channel=model_info_dict['num_bev_features'],
+            point_cloud_range=model_info_dict['point_cloud_range']
+        )
+        model_info_dict['module_list'].append(pillar_adapt_module)
+        return pillar_adapt_module, model_info_dict
+
     def build_backbone_2d(self, model_info_dict):
         if self.model_cfg.get('BACKBONE_2D', None) is None:
             return None, model_info_dict
@@ -105,6 +123,17 @@ class Detector3DTemplate(nn.Module):
         model_info_dict['module_list'].append(backbone_2d_module)
         model_info_dict['num_bev_features'] = backbone_2d_module.num_bev_features
         return backbone_2d_module, model_info_dict
+
+    def build_kd_adapt_block(self, model_info_dict):
+        if self.model_cfg.get('KD_ADAPT_BLOCK', None) is None:
+            return None, model_info_dict
+
+        kd_adapt_block_module = kd_adapt_block.__all__[self.model_cfg.KD_ADAPT_BLOCK.NAME](
+            model_cfg=self.model_cfg.KD_ADAPT_BLOCK,
+            point_cloud_range=model_info_dict['point_cloud_range']
+        )
+        model_info_dict['module_list'].append(kd_adapt_block_module)
+        return kd_adapt_block_module, model_info_dict
 
     def build_pfe(self, model_info_dict):
         if self.model_cfg.get('PFE', None) is None:
@@ -137,6 +166,22 @@ class Detector3DTemplate(nn.Module):
         )
         model_info_dict['module_list'].append(dense_head_module)
         return dense_head_module, model_info_dict
+
+    def build_dense_head_aux(self, model_info_dict):
+        if self.model_cfg.get('DENSE_HEAD_AUX', None) is None:
+            return None, model_info_dict
+        dense_head_aux_module = dense_heads.__all__[self.model_cfg.DENSE_HEAD_AUX.NAME](
+            model_cfg=self.model_cfg.DENSE_HEAD_AUX,
+            input_channels=model_info_dict['num_bev_features'],
+            num_class=self.num_class if not self.model_cfg.DENSE_HEAD_AUX.CLASS_AGNOSTIC else 1,
+            class_names=self.class_names,
+            grid_size=model_info_dict['grid_size'],
+            point_cloud_range=model_info_dict['point_cloud_range'],
+            predict_boxes_when_training=self.model_cfg.get('ROI_HEAD', False),
+            voxel_size=model_info_dict.get('voxel_size', False)
+        )
+        model_info_dict['module_list'].append(dense_head_aux_module)
+        return dense_head_aux_module, model_info_dict
 
     def build_point_head(self, model_info_dict):
         if self.model_cfg.get('POINT_HEAD', None) is None:
@@ -413,3 +458,30 @@ class Detector3DTemplate(nn.Module):
         logger.info('==> Done')
 
         return it, epoch
+    
+    def get_kd_loss(self, batch_dict, tb_dict, disp_dict):
+        kd_loss, tb_dict = self.kd_head.get_kd_loss(batch_dict, tb_dict)
+        # pillar adaptor kd loss
+        if self.pillar_adaptor is not None and self.pillar_adaptor.cal_loss:
+            kd_pillar_loss, tb_dict = self.pillar_adaptor.get_loss(batch_dict, tb_dict)
+            kd_loss += kd_pillar_loss
+        # vfe kd loss
+        if self.model_cfg.get('VFE_KD', None):
+            vfe_kd_loss, tb_dict = self.kd_head.get_vfe_kd_loss(
+                batch_dict, tb_dict, self.model_cfg.KD_LOSS.VFE_LOSS
+            )
+            kd_loss += vfe_kd_loss
+
+        # roi kd loss
+        if self.model_cfg.get('ROI_KD', None):
+            roi_kd_loss, tb_dict = self.kd_head.get_roi_kd_loss(batch_dict, tb_dict)
+            kd_loss += roi_kd_loss
+
+        disp_dict.update({
+            'kd_ls': '{:.2f}'.format(kd_loss if isinstance(kd_loss, float) else kd_loss.item())
+        })
+        for key, val in tb_dict.items():
+            if 'kd' in key:
+                disp_dict[key] = '{:.2f}'.format(val if isinstance(val, float) else val.item())
+
+        return kd_loss, tb_dict, disp_dict

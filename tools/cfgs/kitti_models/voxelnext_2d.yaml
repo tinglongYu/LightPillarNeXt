@@ -34,21 +34,29 @@ MODEL:
     NAME: VoxelNeXt
 
     VFE:
-        NAME: MeanVFE
+        NAME: MyPillarVFE2D
+        WITH_DISTANCE: False
+        USE_ABSLOTE_XYZ: True
+        # 不使用点云簇偏移特征。
+        USE_CLUSTER_XYZ: False
+        # 在特征提取层中使用批归一化（Batch Normalization）。
+        USE_NORM: True
+        # 特征提取网络的层数和通道数，这里定义一个特征提取层，通道数为 32
+        NUM_FILTERS: [ 32 ]
 
     BACKBONE_3D:
-        NAME: VoxelResBackBone8xVoxelNeXt
+        NAME: VoxelResBackBone8xVoxelNeXt2D
 
     DENSE_HEAD:
         NAME: VoxelNeXtHead
         CLASS_AGNOSTIC: False
-        INPUT_FEATURES: 128
+        INPUT_FEATURES: 256
 
         CLASS_NAMES_EACH_HEAD: [
             ['Car', 'Pedestrian', 'Cyclist'],
         ]
         
-        SHARED_CONV_CHANNEL: 128
+        SHARED_CONV_CHANNEL: 256
         KERNEL_SIZE_HEAD: 1
         
         USE_BIAS_BEFORE_NORM: True
@@ -93,7 +101,7 @@ MODEL:
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 16
+    BATCH_SIZE_PER_GPU: 8
     NUM_EPOCHS: 80
 
     OPTIMIZER: adam_onecycle

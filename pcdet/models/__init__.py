@@ -11,6 +11,25 @@ except:
     pass 
     # print('Warning: kornia is not installed. This package is only required by CaDDN')
 
+def build_teacher_network(cfg, args, train_set, dist, logger):
+    teacher_model = build_network(model_cfg=cfg.MODEL_TEACHER, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
+    teacher_model.cuda()
+
+    for param_k in teacher_model.parameters():
+        param_k.requires_grad = False  # not update by gradient
+
+    teacher_model.train()
+
+    if args.teacher_ckpt is not None:
+        logger.info('Loading teacher parameters >>>>>>')
+        teacher_model.load_params_from_file(filename=args.teacher_ckpt, to_cpu=dist, logger=logger)
+
+    teacher_model.is_teacher = True
+    for cur_module in teacher_model.module_list:
+        cur_module.is_teacher = True
+        cur_module.kd = True
+
+    return teacher_model
 
 
 def build_network(model_cfg, num_class, dataset):

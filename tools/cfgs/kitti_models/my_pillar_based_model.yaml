@@ -3,6 +3,9 @@ CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/kitti_dataset.yaml
 
+    FILTER_GROUND_POINTS: False
+    FILTER_GROUND_POINTS_THRESHOLD: -1.65
+
     DATA_AUGMENTOR:
         DISABLE_AUG_LIST: ['placeholder']
         AUG_CONFIG_LIST:
@@ -30,28 +33,42 @@ DATA_CONFIG:
             - NAME: random_world_scaling
               WORLD_SCALE_RANGE: [0.95, 1.05]
 
+
 MODEL:
-    NAME: VoxelNeXt
+    NAME: MyPillarBasedModel
 
     VFE:
-        NAME: MeanVFE
+        NAME: MyPillarVFE2D
+        WITH_DISTANCE: False
+        USE_ABSLOTE_XYZ: True
+        # 不使用点云簇偏移特征。
+        USE_CLUSTER_XYZ: False
+        # 在特征提取层中使用批归一化（Batch Normalization）。
+        USE_NORM: True
+        # 特征提取网络的层数和通道数，这里定义一个特征提取层，通道数为 32
+        NUM_FILTERS: [ 32 ]
 
     BACKBONE_3D:
-        NAME: VoxelResBackBone8xVoxelNeXt
+        NAME: VoxelResBackBone8xVoxelNeXt2D
+    
+    # NECK:
+    #     NAME: SparseASPP
+    #     INPUT_FEATURES: 256
 
     DENSE_HEAD:
         NAME: VoxelNeXtHead
         CLASS_AGNOSTIC: False
-        INPUT_FEATURES: 128
+        INPUT_FEATURES: 256
 
         CLASS_NAMES_EACH_HEAD: [
             ['Car', 'Pedestrian', 'Cyclist'],
         ]
         
-        SHARED_CONV_CHANNEL: 128
+        SHARED_CONV_CHANNEL: 256
         KERNEL_SIZE_HEAD: 1
         
         USE_BIAS_BEFORE_NORM: True
+        HM_THRESHOLD: 0.15
         NUM_HM_CONV: 2
         SEPARATE_HEAD_CFG:
             HEAD_ORDER: ['center', 'center_z', 'dim', 'rot']
@@ -93,7 +110,7 @@ MODEL:
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 16
+    BATCH_SIZE_PER_GPU: 4
     NUM_EPOCHS: 80
 
     OPTIMIZER: adam_onecycle
