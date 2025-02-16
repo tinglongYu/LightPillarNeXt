@@ -9,6 +9,7 @@ from .voxelnext_head import VoxelNeXtHead
 from .voxelnext_head_onnx import VoxelNeXtHeadONNX
 from .voxelnext_head_maxpool import VoxelNeXtHeadMaxPool
 from .voxelnext_head_iou import VoxelNeXtHeadIoU
+from .light_voxelnext_head import LightVoxelNeXtHead
 
 
 
@@ -23,5 +24,6 @@ __all__ = {
     'VoxelNeXtHead': VoxelNeXtHead,
     'VoxelNeXtHeadONNX': VoxelNeXtHeadONNX,
     'VoxelNeXtHeadMaxPool': VoxelNeXtHeadMaxPool,
-    'VoxelNeXtHeadIoU': VoxelNeXtHeadIoU
+    'VoxelNeXtHeadIoU': VoxelNeXtHeadIoU,
+    'LightVoxelNeXtHead': LightVoxelNeXtHead
 }

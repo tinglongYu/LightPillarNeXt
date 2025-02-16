@@ -3,8 +3,8 @@ CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/kitti_dataset.yaml
 
-    FILTER_GROUND_POINTS: False
-    FILTER_GROUND_POINTS_THRESHOLD: -1.65
+    FILTER_GROUND_POINTS: True
+    FILTER_GROUND_POINTS_THRESHOLD: -1.68
 
     DATA_AUGMENTOR:
         DISABLE_AUG_LIST: ['placeholder']
@@ -35,10 +35,10 @@ DATA_CONFIG:
 
 
 MODEL:
-    NAME: MyPillarBasedModel
+    NAME: PillarNeXt
 
     VFE:
-        NAME: MyPillarVFE2D
+        NAME: LightDynamicPillarVFE2D
         WITH_DISTANCE: False
         USE_ABSLOTE_XYZ: True
         # 不使用点云簇偏移特征。
@@ -51,12 +51,9 @@ MODEL:
     BACKBONE_3D:
         NAME: VoxelResBackBone8xVoxelNeXt2D
     
-    # NECK:
-    #     NAME: SparseASPP
-    #     INPUT_FEATURES: 256
 
     DENSE_HEAD:
-        NAME: VoxelNeXtHead
+        NAME: LightVoxelNeXtHead
         CLASS_AGNOSTIC: False
         INPUT_FEATURES: 256
 
@@ -110,7 +107,7 @@ MODEL:
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 4
+    BATCH_SIZE_PER_GPU: 8
     NUM_EPOCHS: 80
 
     OPTIMIZER: adam_onecycle

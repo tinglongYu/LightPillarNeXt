@@ -11,5 +11,6 @@ venv/
 *.zip
 *.bin
 output
+data
 version.py
 .DS_Store

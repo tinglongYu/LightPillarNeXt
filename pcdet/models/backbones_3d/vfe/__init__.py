@@ -5,6 +5,7 @@ from .dynamic_pillar_vfe import DynamicPillarVFE, DynamicPillarVFESimple2D
 from .image_vfe import ImageVFE
 from .vfe_template import VFETemplate
 from .my_pillar_vfe import MyPillarVFE2D
+from .light_dynamic_pillar_vfe import LightDynamicPillarVFE2D
 
 __all__ = {
     'VFETemplate': VFETemplate,
@@ -15,4 +16,5 @@ __all__ = {
     'DynPillarVFE': DynamicPillarVFE,
     'DynamicPillarVFESimple2D': DynamicPillarVFESimple2D,
     'MyPillarVFE2D': MyPillarVFE2D,
+    'LightDynamicPillarVFE2D': LightDynamicPillarVFE2D
 }
