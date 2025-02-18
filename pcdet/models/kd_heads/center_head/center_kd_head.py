@@ -68,6 +68,12 @@ class CenterHeadKD(CenterLogitKDHead, CenterFeatureKDHead, CenterRoIKDHead,
             )
             dense_head.forward_ret_dict['decoded_pred_dicts'] = decoded_pred_dicts
 
+    def put_pred_to_ret_dict_voxelnext(self, dense_head, data_dict, pred_dicts, voxel_indices, spatial_shape):
+        if data_dict.get('teacher_decoded_pred_flag', None) and dense_head.training:
+            decoded_pred_dicts = dense_head.generate_predicted_boxes(
+                data_dict['batch_size'], pred_dicts, voxel_indices, spatial_shape
+            )
+            dense_head.forward_ret_dict['decoded_pred_dicts'] = decoded_pred_dicts
     def get_prior_knowledge_from_teacher_model(self, teacher_model, model_cfg):
         teacher_bn_weights = []
         for i, deblock in enumerate(teacher_model.backbone_2d.deblocks):

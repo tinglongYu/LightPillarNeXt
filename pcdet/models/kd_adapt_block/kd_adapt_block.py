@@ -4,7 +4,7 @@ from torch.nn.init import kaiming_normal_
 
 from pcdet.models.model_utils.basic_block_2d import build_block
 
-
+# 将输入特征进行转换或适配，以便它们可以与目标模型的其他部分匹配
 class KDAdaptBlock(nn.Module):
     def __init__(self, model_cfg, point_cloud_range):
         super().__init__()

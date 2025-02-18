@@ -3,7 +3,7 @@ from torch.nn.utils import clip_grad_norm_
 
 from pcdet.config import cfg
 from pcdet.utils import common_utils
-from pcdet.models.dense_heads import CenterHead, AnchorHeadTemplate
+from pcdet.models.dense_heads import CenterHead, AnchorHeadTemplate, VoxelNeXtHead, LightVoxelNeXtHead
 
 
 def adjust_batch_info_teacher(batch):
@@ -102,7 +102,7 @@ def add_teacher_pred_to_batch(teacher_model, batch, pred_dicts=None):
     if batch.get('teacher_decoded_pred_flag', None):
         if (not teacher_model.training) and teacher_model.roi_head is not None:
             batch['decoded_pred_tea'] = pred_dicts
-        elif isinstance(teacher_model.dense_head, CenterHead):
+        elif isinstance(teacher_model.dense_head, (CenterHead, VoxelNeXtHead, LightVoxelNeXtHead)):
             batch['decoded_pred_tea'] = teacher_model.dense_head.forward_ret_dict['decoded_pred_dicts']
         elif isinstance(teacher_model.dense_head, AnchorHeadTemplate):
             batch['decoded_pred_tea'] = pred_dicts

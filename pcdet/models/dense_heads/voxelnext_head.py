@@ -557,7 +557,7 @@ class VoxelNeXtHead(nn.Module):
 
         # add needed predictions to dict
         if self.kd_head is not None and self.is_teacher:
-            self.kd_head.put_pred_to_ret_dict(self, data_dict, pred_dicts)
+            self.kd_head.put_pred_to_ret_dict_voxelnext(self, data_dict, pred_dicts, voxel_indices, spatial_shape)
 
         if (not self.training and not self.is_teacher) or self.predict_boxes_when_training:
             if self.double_flip:
