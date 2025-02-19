@@ -44,7 +44,25 @@ class SeparateHead(nn.Module):
         for cur_name in self.sep_head_dict:
             ret_dict[cur_name] = self.__getattr__(cur_name)(x).features
 
-        return ret_dict
+        hm_features = ret_dict['hm']
+
+        threshold_0=torch.quantile(hm_features[:,0].squeeze(),0.8)
+        threshold_1=torch.quantile(hm_features[:,1].squeeze(),0.8)
+        threshold_2=torch.quantile(hm_features[:,2].squeeze(),0.8)
+
+        mask = (hm_features[:, 0] >= threshold_0) | (hm_features[:, 1] >= threshold_1) | (hm_features[:, 2] >= threshold_2)
+
+        ret_dict['hm']=hm_features[mask]
+        
+        # 获取原始特征和索引
+        filtered_features = x.features[mask]
+        filtered_indices = x.indices[mask]
+        
+        # 使用replace_feature替换特征，保持稀疏张量的结构
+        filtered_x = x.replace_feature(filtered_features)
+        filtered_x.indices = filtered_indices
+
+        return filtered_x, ret_dict
 
 
 class VoxelNeXtHead(nn.Module):
@@ -534,8 +552,12 @@ class VoxelNeXtHead(nn.Module):
         self.forward_ret_dict['batch_index'] = batch_index
         
         pred_dicts = []
+        filtered_x = x
         for head in self.heads_list:
-            pred_dicts.append(head(x))
+            filtered_x,ret_dict=head(x)
+            pred_dicts.append(ret_dict)
+            
+        data_dict['filtered_encoded_spconv_tensor'] = filtered_x
 
         if self.training:
             target_boxes = data_dict['gt_boxes']

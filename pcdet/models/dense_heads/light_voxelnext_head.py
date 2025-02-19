@@ -562,6 +562,8 @@ class LightVoxelNeXtHead(nn.Module):
         for head in self.heads_list:
             filtered_x,ret_dict=head(x)
             pred_dicts.append(ret_dict)
+        
+        data_dict['filtered_encoded_spconv_tensor'] = filtered_x
 
         spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = self._get_voxel_infos(filtered_x)
         self.forward_ret_dict['batch_index'] = batch_index
