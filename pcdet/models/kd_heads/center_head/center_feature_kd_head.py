@@ -75,11 +75,10 @@ class CenterFeatureKDHead(KDHeadTemplate):
 
         """
         feature_name = self.model_cfg.FEATURE_KD.FEATURE_NAME
-        feature_stu = batch_dict[feature_name]
+        feature_stu = batch_dict[feature_name].dense()
         feature_name_tea = self.model_cfg.FEATURE_KD.get('FEATURE_NAME_TEA', feature_name)
         feature_tea = batch_dict[feature_name_tea + '_tea']
 
-        target_dicts = batch_dict['target_dicts_tea']
 
         if feature_stu.shape != feature_tea.shape and self.model_cfg.FEATURE_KD.get('ALIGN', None):
             feature_tea, feature_stu = self.align_feature_map(
@@ -90,6 +89,7 @@ class CenterFeatureKDHead(KDHeadTemplate):
         bs, channel, height, width = feature_tea.shape
         feature_mask = torch.ones([bs, height, width], dtype=torch.float32).cuda()
         if loss_cfg.get('fg_mask', None):
+            target_dicts = batch_dict['target_dicts_tea']
             fg_mask = self.cal_fg_mask_from_target_heatmap_batch(
                 target_dict=target_dicts, soft=loss_cfg.get('soft_mask', None)
             )[0]
