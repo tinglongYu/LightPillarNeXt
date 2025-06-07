@@ -138,7 +138,6 @@ def main():
     )
 
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
-
     if cfg.get('KD', None) and cfg.KD.ENABLED:
         assert args.teacher_ckpt is not None
         teacher_model = build_teacher_network(cfg, args, train_set, dist_train, logger)

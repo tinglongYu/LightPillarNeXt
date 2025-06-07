@@ -7,6 +7,8 @@ import re
 import time
 from pathlib import Path
 
+from ptflops import get_model_complexity_info
+
 import numpy as np
 import torch
 from tensorboardX import SummaryWriter
@@ -196,7 +198,12 @@ def main():
     )
 
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=test_set)
+    
     with torch.no_grad():
+        flops, params = get_model_complexity_info(model, (3, 224, 224), as_strings=True,
+                                                print_per_layer_stat=True)
+        print(f'FLOPs: {flops}')
+        print(f'Params: {params}')
         if args.eval_all:
             repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir, dist_test=dist_test)
         else:
